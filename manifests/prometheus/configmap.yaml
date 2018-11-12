@@ -2,9 +2,9 @@ apiVersion: v1
 data:
   prometheus.yaml: |
     global:
-      scrape_interval: 10s
-      scrape_timeout: 10s
-      evaluation_interval: 10s
+      scrape_interval: 2s
+      scrape_timeout: 1s
+      evaluation_interval: 1m
     rule_files:
       - "/etc/prometheus-rules/*.rules"
     scrape_configs:

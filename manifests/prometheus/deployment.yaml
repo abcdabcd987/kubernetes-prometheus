@@ -18,10 +18,11 @@ spec:
       serviceAccountName: prometheus-k8s
       containers:
       - name: prometheus
-        image: prom/prometheus:v1.7.0
+        image: prom/prometheus:v1.8.2
         args:
-          - '-storage.local.retention=12h'
-          - '-storage.local.memory-chunks=500000'
+          - '-storage.local.retention=360h0m0s'
+          - '-storage.local.target-heap-size=1073741824' # 1024MB
+          - '-storage.local.path=/prometheus'
           - '-config.file=/etc/prometheus/prometheus.yaml'
           - '-alertmanager.url=http://alertmanager:9093/'
         ports:
@@ -30,15 +31,17 @@ spec:
         resources:
           requests:
             cpu: 500m
-            memory: 500M
+            memory: 1500M
           limits:
             cpu: 500m
-            memory: 500M
+            memory: 1500M
         volumeMounts:
         - name: config-volume
           mountPath: /etc/prometheus
         - name: rules-volume
           mountPath: /etc/prometheus-rules
+        - name: prometheus-storage
+          mountPath: /prometheus
       volumes:
       - name: config-volume
         configMap:
@@ -46,3 +49,7 @@ spec:
       - name: rules-volume
         configMap:
           name: prometheus-rules
+      - name: prometheus-storage
+        persistentVolumeClaim:
+          claimName: prometheus-storage
+

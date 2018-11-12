@@ -417,7 +417,9 @@ spec:
           mountPath: /var/lib/grafana
       volumes:
       - name: grafana-persistent-storage
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: grafana-persistent-storage
+
 ---
 apiVersion: v1
 data:
@@ -497,7 +499,7 @@ data:
             "show": false
           },
           "targets": [{
-            "expr": "(time() - process_start_time_seconds{job=\"prometheus\"})",
+            "expr": "(time() - process_start_time_seconds{app=\"prometheus\", component=\"core\"})",
             "intervalFactor": 2,
             "refId": "A",
             "step": 4
@@ -959,7 +961,7 @@ data:
           "stack": false,
           "steppedLine": false,
           "targets": [{
-            "expr": "prometheus_evaluator_duration_milliseconds{quantile!=\"0.01\", quantile!=\"0.05\"}",
+            "expr": "prometheus_evaluator_duration_seconds{quantile!=\"0.01\", quantile!=\"0.05\"}",
             "interval": "",
             "intervalFactor": 2,
             "legendFormat": "{{quantile}}",
@@ -1886,7 +1888,7 @@ data:
           "stack": false,
           "steppedLine": false,
           "targets": [{
-            "expr": "sum(rate(container_cpu_usage_seconds_total{image!=\"\",name=~\"^k8s_.*\",kubernetes_io_hostname=~\"^$Node$\"}[1m])) by (pod_name)",
+            "expr": "sum(rate(container_cpu_usage_seconds_total{image!=\"\",name=~\"^k8s_.*\",instance=~\"^$instance$\",namespace=~\"^$namespace$\"}[1m])) by (pod_name)",
             "interval": "",
             "intervalFactor": 2,
             "legendFormat": "{{ pod_name }}",
@@ -2357,6 +2359,22 @@ spec:
 #          servicePort: 3000
 ---
 apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  namespace: monitoring
+  name: grafana-persistent-storage
+  labels:
+    app: grafana
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 8Gi
+  storageClassName: grafana
+
+---
+apiVersion: v1
 kind: Secret
 data:
   admin-password: YWRtaW4=
@@ -2386,9 +2404,9 @@ apiVersion: v1
 data:
   prometheus.yaml: |
     global:
-      scrape_interval: 10s
-      scrape_timeout: 10s
-      evaluation_interval: 10s
+      scrape_interval: 2s
+      scrape_timeout: 1s
+      evaluation_interval: 1m
     rule_files:
       - "/etc/prometheus-rules/*.rules"
     scrape_configs:
@@ -2498,7 +2516,6 @@ data:
           - role: node
         relabel_configs:
           - action: labelmap
-          - action: labelmap
             regex: __meta_kubernetes_node_label_(.+)
           - target_label: __address__
             replacement: kubernetes.default.svc:443
@@ -2506,7 +2523,6 @@ data:
             regex: (.+)
             target_label: __metrics_path__
             replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
-
 kind: ConfigMap
 metadata:
   creationTimestamp: null
@@ -2533,10 +2549,11 @@ spec:
       serviceAccountName: prometheus-k8s
       containers:
       - name: prometheus
-        image: prom/prometheus:v1.7.0
+        image: prom/prometheus:v1.8.2
         args:
-          - '-storage.local.retention=12h'
-          - '-storage.local.memory-chunks=500000'
+          - '-storage.local.retention=360h0m0s'
+          - '-storage.local.target-heap-size=1073741824' # 1024MB
+          - '-storage.local.path=/prometheus'
           - '-config.file=/etc/prometheus/prometheus.yaml'
           - '-alertmanager.url=http://alertmanager:9093/'
         ports:
@@ -2545,15 +2562,17 @@ spec:
         resources:
           requests:
             cpu: 500m
-            memory: 500M
+            memory: 1500M
           limits:
             cpu: 500m
-            memory: 500M
+            memory: 1500M
         volumeMounts:
         - name: config-volume
           mountPath: /etc/prometheus
         - name: rules-volume
           mountPath: /etc/prometheus-rules
+        - name: prometheus-storage
+          mountPath: /prometheus
       volumes:
       - name: config-volume
         configMap:
@@ -2561,6 +2580,10 @@ spec:
       - name: rules-volume
         configMap:
           name: prometheus-rules
+      - name: prometheus-storage
+        persistentVolumeClaim:
+          claimName: prometheus-storage
+
 ---
 apiVersion: extensions/v1beta1
 kind: Deployment
@@ -2582,7 +2605,7 @@ spec:
         - containerPort: 8080
 ---
 # ---
-# apiVersion: rbac.authorization.k8s.io/v1beta1
+# apiVersion: rbac.authorization.k8s.io/v1
 # kind: ClusterRoleBinding
 # metadata:
 #   name: kube-state-metrics
@@ -2595,7 +2618,7 @@ spec:
 #   name: kube-state-metrics
 #   namespace: monitoring
 # ---
-# apiVersion: rbac.authorization.k8s.io/v1beta1
+# apiVersion: rbac.authorization.k8s.io/v1
 # kind: ClusterRole
 # metadata:
 #   name: kube-state-metrics
@@ -2638,7 +2661,7 @@ spec:
     protocol: TCP
   selector:
     app: kube-state-metrics
-
+    
 ---
 apiVersion: extensions/v1beta1
 kind: DaemonSet
@@ -2832,7 +2855,24 @@ metadata:
   name: prometheus-rules
   namespace: monitoring
 ---
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  namespace: monitoring
+  name: prometheus-storage
+  labels:
+    app: prometheus
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 8Gi
+  storageClassName: prometheus
+
+---
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: prometheus
@@ -2845,7 +2885,7 @@ subjects:
   name: prometheus-k8s
   namespace: monitoring
 ---
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: prometheus

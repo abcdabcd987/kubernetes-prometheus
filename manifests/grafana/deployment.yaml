@@ -59,4 +59,6 @@ spec:
           mountPath: /var/lib/grafana
       volumes:
       - name: grafana-persistent-storage
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: grafana-persistent-storage
+
