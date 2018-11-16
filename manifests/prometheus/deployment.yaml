@@ -20,11 +20,11 @@ spec:
       - name: prometheus
         image: prom/prometheus:v1.8.2
         args:
-          - '-storage.local.retention=360h0m0s'
+          - '-storage.local.retention=72h0m0s'
           - '-storage.local.target-heap-size=1073741824' # 1024MB
           - '-storage.local.path=/prometheus'
           - '-config.file=/etc/prometheus/prometheus.yaml'
-          - '-alertmanager.url=http://alertmanager:9093/'
+          # - '-alertmanager.url=http://alertmanager:9093/'
         ports:
         - name: webui
           containerPort: 9090
